@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import sys
 import uuid
 from datetime import datetime
 from decimal import Decimal
@@ -26,8 +27,19 @@ from .services.recommendation import RecommendationService
 app = FastAPI(title="ComPick API", version="0.1.0-mvp")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-# --- Состояние приложения (заглушка БД: в MVP — в памяти, риск/контракт 02.2) ---
-catalog: list[Component] = build_catalog()
+# --- Состояние приложения ---
+# Каталог читается из MySQL (схема ComPick, db/schema.sql). Если БД недоступна —
+# автоматически используется демо-каталог в памяти (app/catalog_data.py).
+try:
+    from .repository import load_catalog
+    catalog: list[Component] = load_catalog()
+    DATA_SOURCE = "db"
+except Exception as e:  # noqa: BLE001 — каркас: любая ошибка БД -> демо-режим
+    catalog = build_catalog()
+    DATA_SOURCE = "memory"
+    print(f"[ComPick] БД недоступна ({e}); работаю с демо-каталогом в памяти",
+          file=sys.stderr)
+
 compat = CompatibilityService()
 recommender = RecommendationService(catalog, compat)
 builds: dict = {}
@@ -245,4 +257,5 @@ def list_profiles():
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "components": len(catalog), "builds": len(builds)}
+    return {"status": "ok", "components": len(catalog), "builds": len(builds),
+            "data_source": DATA_SOURCE}
